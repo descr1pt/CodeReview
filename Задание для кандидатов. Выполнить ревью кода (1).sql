@@ -3,21 +3,16 @@ create procedure syn.usp_ImportFileCustomerSeasonal
 AS
 set nocount on
 begin
-	declare @RowCount int = (select count(*) from syn.SA_CustomerSeasonal)
+	declare @RowsCount int = (select count(*) from syn.SA_CustomerSeasonal)
 	declare @ErrorMessage varchar(max)
 
--- Проверка на корректность загрузки
-	if not exists (
-	select 1
-	from syn.ImportFile as f
-	where f.ID = @ID_Record
-		and f.FlagLoaded = cast(1 as bit)
-	)
-		begin
-			set @ErrorMessage = 'Ошибка при загрузке файла, проверьте корректность данных'
-			raiserror(@ErrorMessage, 3, 1)
-			return
-		end
+	-- Проверка на корректность загрузки
+	if not exists (select 1 from syn.ImportFile as imf where imf.ID = @ID_Record and imf.FlagLoaded = cast(1 as bit))
+	begin
+		set @ErrorMessage = 'Ошибка при загрузке файла, проверьте корректность данных'
+		raiserror(@ErrorMessage, 3, 1)
+		return
+	end
 
 	-- Чтение из слоя временных данных
 	select
@@ -40,8 +35,10 @@ begin
 		and try_cast(cs.DateEnd as date) is not null
 		and try_cast(isnull(cs.FlagActive, 0) as bit) is not null
 
-	-- Определяем некорректные записи
-	-- Добавляем причину, по которой запись считается некорректной
+	/*
+		Определяем некорректные записи
+		Добавляем причину, по которой запись считается некорректной
+	*/
 	select
 		cs.*
 		,case
@@ -69,7 +66,7 @@ begin
 		or try_cast(isnull(cs.FlagActive, 0) as bit) is null
 
 	-- Обработка данных из файла
-	merge into syn.CustomerSeasonal as cs
+	merge syn.CustomerSeasonal as cs
 	using (
 		select
 			cs_temp.ID_dbo_Customer
@@ -83,8 +80,7 @@ begin
 	) as s on s.ID_dbo_Customer = cs.ID_dbo_Customer
 		and s.ID_Season = cs.ID_Season
 		and s.DateBegin = cs.DateBegin
-	when matched
-		and t.ID_CustomerSystemType <> s.ID_CustomerSystemType then
+	when matched and t.ID_CustomerSystemType <> s.ID_CustomerSystemType then
 		update
 		set ID_CustomerSystemType = s.ID_CustomerSystemType
 			,DateEnd = s.DateEnd
@@ -96,7 +92,7 @@ begin
 
 	-- Информационное сообщение
 	begin
-		select @ErrorMessage = concat('Обработано строк: ', @RowCount)
+		select @ErrorMessage = concat('Обработано строк: ', @RowsCount)
 		raiserror(@ErrorMessage, 1, 1)
 
 		--Формирование таблицы для отчетности
